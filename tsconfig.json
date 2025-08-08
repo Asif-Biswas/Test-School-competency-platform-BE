@@ -7,6 +7,8 @@
     // File Layout
     "rootDir": "./src",
     "outDir": "./dist",
+    "verbatimModuleSyntax": false,
+
 
     // Environment Settings
     // See also https://aka.ms/tsconfig/module
@@ -38,7 +40,6 @@
     // Recommended Options
     "strict": true,
     "jsx": "react-jsx",
-    "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
