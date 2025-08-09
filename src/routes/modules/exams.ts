@@ -5,8 +5,12 @@ import { requireAuth } from "../../middleware/auth"
 import { Exam } from "../../models/Exam"
 import { Attempt } from "../../models/Attempt"
 import { Question } from "../../models/Question"
+import { Answer } from "../../models/Answer"
 import { Certificate } from "../../models/Certificate"
 import { Types } from "mongoose"
+import PDFDocument from "pdfkit"
+import { User } from "../../models/User"
+import { sendMail } from "../../utils/emai"
 
 const router = Router()
 
@@ -92,34 +96,21 @@ router.get("/questions", requireAuth, async (req, res, next) => {
     const step = (req.query.step as string) || "STEP_1"
     if (!["STEP_1", "STEP_2", "STEP_3"].includes(step)) throw createError(400, "Invalid step")
     const levels = stepLevels[step as "STEP_1" | "STEP_2" | "STEP_3"]
-
-    // Aim for 44 questions total, evenly across the two levels (22 each).
     const targetTotal = 44
     const perLevel = Math.ceil(targetTotal / levels.length)
 
-    // Try to sample per level with aggregation
     const samples = await Promise.all(
-      levels.map(async (lvl) => {
-        return Question.aggregate([{ $match: { level: lvl } }, { $sample: { size: perLevel } }])
-      }),
+      levels.map(async (lvl) => Question.aggregate([{ $match: { level: lvl } }, { $sample: { size: perLevel } }])),
     )
-
     const merged = samples.flat()
-
-    // If still fewer than targetTotal (e.g., not enough seeded), top up from any of the step levels
     if (merged.length < targetTotal) {
       const need = targetTotal - merged.length
       const topUp = await Question.aggregate([{ $match: { level: { $in: levels } } }, { $sample: { size: need } }])
-      // Avoid duplicates by id
       const existingIds = new Set(merged.map((q: any) => String(q._id)))
-      for (const q of topUp) {
-        if (!existingIds.has(String(q._id))) merged.push(q)
-      }
+      for (const q of topUp) if (!existingIds.has(String(q._id))) merged.push(q)
     }
 
-    res.json({
-      questions: merged.map((q: any) => ({ _id: q._id, text: q.text, choices: q.choices })),
-    })
+    res.json({ questions: merged.map((q: any) => ({ _id: q._id, text: q.text, choices: q.choices })) })
   } catch (err) {
     next(err)
   }
@@ -132,14 +123,7 @@ router.post("/submit", requireAuth, async (req, res, next) => {
     const exam = await Exam.findOne({ userId })
 
     if (!exam || !exam.currentStep) {
-      return res.status(200).json({
-        message: "No active step",
-        correct: 0,
-        total: 44,
-        pct: 0,
-        nextStep: exam?.currentStep ?? null,
-        finalLevel: exam?.finalLevel ?? null,
-      })
+      return res.status(200).json({ message: "No active step", correct: 0, total: 44, pct: 0, nextStep: null, finalLevel: null })
     }
     if (exam.status !== "in_progress") {
       return res.status(200).json({
@@ -164,22 +148,28 @@ router.post("/submit", requireAuth, async (req, res, next) => {
       })
     }
 
-    if (!exam.currentStep) throw createError(400, "No active step")
-    if (exam.dueAt && exam.dueAt.getTime() < Date.now()) {
-      // time expired: treat unsent answers as incorrect
-    }
-
     const currentStep = exam.currentStep
     const levels = stepLevels[currentStep]
     const ids = answers.map((a) => a.questionId)
     const questions = await Question.find({ _id: { $in: ids }, level: { $in: levels } })
     let correct = 0
+    const answerDocs: any[] = []
     for (const ans of answers) {
-      const q = questions.find((q) => String(q._id) === ans.questionId)
+      const q = questions.find((qq) => String(qq._id) === ans.questionId)
       const isCorrect = q ? q.correctChoiceId === ans.choiceId : false
       if (isCorrect) correct++
+      if (attempt?._id && q) {
+        answerDocs.push({
+          attemptId: attempt._id,
+          questionId: q._id,
+          choiceId: ans.choiceId,
+          correct: isCorrect,
+        })
+      }
     }
-    const total = Math.max(44, answers.length) // expect 44
+    if (answerDocs.length) await Answer.insertMany(answerDocs)
+
+    const total = Math.max(44, answers.length)
     const pct = (correct / total) * 100
 
     if (attempt) {
@@ -227,15 +217,44 @@ router.post("/submit", requireAuth, async (req, res, next) => {
 
     await exam.save()
 
+    // Auto-generate certificate on completion and email it
     const latestAttempt = await Attempt.findOne({ examId: exam._id }).sort({ submittedAt: -1 })
-    if (exam.status === "completed" && exam.finalLevel) {
-      const exists = await Certificate.findOne({ userId: new Types.ObjectId(userId), attemptId: latestAttempt?._id })
-      if (!exists && latestAttempt?._id) {
-        await Certificate.create({
+    if (exam.status === "completed" && exam.finalLevel && latestAttempt?._id) {
+      const existing = await Certificate.findOne({ userId: new Types.ObjectId(userId), attemptId: latestAttempt._id })
+      let cert = existing
+      if (!existing) {
+        cert = await Certificate.create({
           userId: new Types.ObjectId(userId),
           attemptId: latestAttempt._id,
           level: exam.finalLevel,
         })
+      }
+      try {
+        const user = await User.findById(userId).select("name email")
+        // Create PDF buffer
+        const buffer = await new Promise<Buffer>((resolve) => {
+          const doc = new PDFDocument({ size: "A4", margin: 50 })
+          const chunks: Uint8Array[] = []
+          doc.on("data", (chunk) => chunks.push(chunk))
+          doc.on("end", () => resolve(Buffer.concat(chunks)))
+          doc.fontSize(24).text("Test_School Digital Competency Certificate", { align: "center" })
+          doc.moveDown()
+          doc.fontSize(16).text(`Awarded to: ${user?.name ?? "Candidate"}`, { align: "center" })
+          doc.fontSize(12).text(`Email: ${user?.email ?? ""}`, { align: "center" })
+          doc.moveDown()
+          doc.fontSize(20).text(`Level: ${exam.finalLevel}`, { align: "center" })
+          doc.moveDown()
+          doc.fontSize(12).text(`Issued: ${cert?.createdAt.toDateString()}`, { align: "center" })
+          doc.end()
+        })
+        await sendMail(
+          user?.email ?? "",
+          "Your Test_School Certificate",
+          `<p>Hi ${user?.name ?? "Candidate"},</p><p>Congratulations! Your certificate (level ${exam.finalLevel}) is attached.</p>`,
+          [{ filename: `certificate-${cert?._id}.pdf`, content: buffer }],
+        )
+      } catch {
+        // email failure should not block response
       }
     }
 
