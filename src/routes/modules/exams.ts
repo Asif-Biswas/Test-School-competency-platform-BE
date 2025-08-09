@@ -5,6 +5,8 @@ import { requireAuth } from "../../middleware/auth"
 import { Exam } from "../../models/Exam"
 import { Attempt } from "../../models/Attempt"
 import { Question } from "../../models/Question"
+import { Certificate } from "../../models/Certificate"
+import { Types } from "mongoose"
 
 const router = Router()
 
@@ -224,6 +226,19 @@ router.post("/submit", requireAuth, async (req, res, next) => {
     }
 
     await exam.save()
+
+    const latestAttempt = await Attempt.findOne({ examId: exam._id }).sort({ submittedAt: -1 })
+    if (exam.status === "completed" && exam.finalLevel) {
+      const exists = await Certificate.findOne({ userId: new Types.ObjectId(userId), attemptId: latestAttempt?._id })
+      if (!exists && latestAttempt?._id) {
+        await Certificate.create({
+          userId: new Types.ObjectId(userId),
+          attemptId: latestAttempt._id,
+          level: exam.finalLevel,
+        })
+      }
+    }
+
     res.json({
       message: "Submitted",
       correct,
