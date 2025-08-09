@@ -6,8 +6,17 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
-import apiRouter from "./routes/modules/seb.js";
 import { errorHandler, notFound } from "./middleware/error.js";
+
+
+import auth from "./routes/modules/auth"
+import exams from "./routes/modules/exams"
+import questions from "./routes/modules/questions"
+import admin from "./routes/modules/admin"
+import certificates from "./routes/modules/certificates"
+// import seb from "./modules/seb"
+
+
 
 const app = express();
 
@@ -18,10 +27,18 @@ app.use(cookieParser());
 app.use(morgan("dev"));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 
-app.get("/api/health", (req, res) => res.json({ ok: true }));
-app.use("/api", apiRouter);
+app.get("/api/health", (req, res) => res.send("api is working"));
+// app.use("/api", apiRouter);
 app.use(notFound);
 app.use(errorHandler);
+
+app.use("/auth", auth)
+app.use("/exams", exams)
+app.use("/questions", questions)
+app.use("/admin", admin)
+app.use("/certificates", certificates)
+
+
 
 const PORT = Number(process.env.PORT || 4000);
 
