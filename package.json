@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon --exec tsx src/index.ts",
+    "seed": "nodemon --exec tsx src/seed/seed.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },

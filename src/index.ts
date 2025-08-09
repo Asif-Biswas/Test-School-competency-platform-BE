@@ -10,14 +10,6 @@ import { errorHandler, notFound } from "./middleware/error.js";
 import  apiRouter  from "./routes"
 
 
-// import auth from "./routes/modules/auth"
-// import exams from "./routes/modules/exams"
-// import questions from "./routes/modules/questions"
-// import admin from "./routes/modules/admin"
-// import certificates from "./routes/modules/certificates"
-// // import seb from "./modules/seb"
-
-
 
 const app = express();
 
@@ -32,14 +24,6 @@ app.get("/api/health", (req, res) => res.send("api is working"));
 app.use("/api", apiRouter);
 app.use(notFound);
 app.use(errorHandler);
-
-// app.use("/auth", auth)
-// app.use("/exams", exams)
-// app.use("/questions", questions)
-// app.use("/admin", admin)
-// app.use("/certificates", certificates)
-
-
 
 const PORT = Number(process.env.PORT || 4000);
 

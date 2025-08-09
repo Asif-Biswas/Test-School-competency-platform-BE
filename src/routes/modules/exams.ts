@@ -1,11 +1,10 @@
 import { Router } from "express"
 import { z } from "zod"
 import createError from "http-errors"
-import { requireAuth } from "../../middleware/auth.js"
-import { Exam } from "../../models/Exam.js"
-import { Attempt } from "../../models/Attempt.js"
-import { Question } from "../../models/Question.js"
-
+import { requireAuth } from "../../middleware/auth"
+import { Exam } from "../../models/Exam"
+import { Attempt } from "../../models/Attempt"
+import { Question } from "../../models/Question"
 
 const router = Router()
 
@@ -14,6 +13,15 @@ const stepLevels: Record<"STEP_1" | "STEP_2" | "STEP_3", string[]> = {
   STEP_2: ["B1", "B2"],
   STEP_3: ["C1", "C2"],
 }
+
+const submitSchema = z.object({
+  answers: z.array(
+    z.object({
+      questionId: z.string(),
+      choiceId: z.string(),
+    }),
+  ),
+})
 
 function scoreToLevel(step: "STEP_1" | "STEP_2" | "STEP_3", pct: number) {
   if (step === "STEP_1") {
@@ -82,43 +90,96 @@ router.get("/questions", requireAuth, async (req, res, next) => {
     const step = (req.query.step as string) || "STEP_1"
     if (!["STEP_1", "STEP_2", "STEP_3"].includes(step)) throw createError(400, "Invalid step")
     const levels = stepLevels[step as "STEP_1" | "STEP_2" | "STEP_3"]
-    // pick 44 questions across levels (22 per level ideally). For demo, just first 44.
-    const questions = await Question.find({ level: { $in: levels } }).limit(44)
+
+    // Aim for 44 questions total, evenly across the two levels (22 each).
+    const targetTotal = 44
+    const perLevel = Math.ceil(targetTotal / levels.length)
+
+    // Try to sample per level with aggregation
+    const samples = await Promise.all(
+      levels.map(async (lvl) => {
+        return Question.aggregate([{ $match: { level: lvl } }, { $sample: { size: perLevel } }])
+      }),
+    )
+
+    const merged = samples.flat()
+
+    // If still fewer than targetTotal (e.g., not enough seeded), top up from any of the step levels
+    if (merged.length < targetTotal) {
+      const need = targetTotal - merged.length
+      const topUp = await Question.aggregate([{ $match: { level: { $in: levels } } }, { $sample: { size: need } }])
+      // Avoid duplicates by id
+      const existingIds = new Set(merged.map((q: any) => String(q._id)))
+      for (const q of topUp) {
+        if (!existingIds.has(String(q._id))) merged.push(q)
+      }
+    }
+
     res.json({
-      questions: questions.map(q => ({ _id: q._id, text: q.text, choices: q.choices })),
+      questions: merged.map((q: any) => ({ _id: q._id, text: q.text, choices: q.choices })),
     })
   } catch (err) {
     next(err)
   }
 })
 
-const submitSchema = z.object({
-  answers: z.array(z.object({ questionId: z.string(), choiceId: z.string() })),
-})
 router.post("/submit", requireAuth, async (req, res, next) => {
   try {
     const userId = (req as any).user.id
     const { answers } = submitSchema.parse(req.body)
     const exam = await Exam.findOne({ userId })
-    if (!exam || exam.status !== "in_progress" || !exam.currentStep) throw createError(400, "No active step")
+
+    if (!exam || !exam.currentStep) {
+      return res.status(200).json({
+        message: "No active step",
+        correct: 0,
+        total: 44,
+        pct: 0,
+        nextStep: exam?.currentStep ?? null,
+        finalLevel: exam?.finalLevel ?? null,
+      })
+    }
+    if (exam.status !== "in_progress") {
+      return res.status(200).json({
+        message: "Exam not in progress",
+        correct: 0,
+        total: 44,
+        pct: 0,
+        nextStep: exam.currentStep ?? null,
+        finalLevel: exam.finalLevel ?? null,
+      })
+    }
+
+    const attempt = await Attempt.findOne({ examId: exam._id, step: exam.currentStep }).sort({ startedAt: -1 })
+    if (attempt?.submittedAt) {
+      return res.status(200).json({
+        message: "Already submitted",
+        correct: attempt.score,
+        total: attempt.total,
+        pct: attempt.total ? (attempt.score / attempt.total) * 100 : 0,
+        nextStep: exam.currentStep ?? null,
+        finalLevel: exam.finalLevel ?? null,
+      })
+    }
+
+    if (!exam.currentStep) throw createError(400, "No active step")
     if (exam.dueAt && exam.dueAt.getTime() < Date.now()) {
       // time expired: treat unsent answers as incorrect
     }
 
     const currentStep = exam.currentStep
     const levels = stepLevels[currentStep]
-    const ids = answers.map(a => a.questionId)
+    const ids = answers.map((a) => a.questionId)
     const questions = await Question.find({ _id: { $in: ids }, level: { $in: levels } })
     let correct = 0
     for (const ans of answers) {
-      const q = questions.find(q => String(q._id) === ans.questionId)
+      const q = questions.find((q) => String(q._id) === ans.questionId)
       const isCorrect = q ? q.correctChoiceId === ans.choiceId : false
       if (isCorrect) correct++
     }
     const total = Math.max(44, answers.length) // expect 44
     const pct = (correct / total) * 100
 
-    const attempt = await Attempt.findOne({ examId: exam._id, step: currentStep }).sort({ startedAt: -1 })
     if (attempt) {
       attempt.score = correct
       attempt.total = total
@@ -163,7 +224,14 @@ router.post("/submit", requireAuth, async (req, res, next) => {
     }
 
     await exam.save()
-    res.json({ message: "Submitted", correct, total, pct, nextStep: exam.currentStep ?? null, finalLevel: exam.finalLevel ?? null })
+    res.json({
+      message: "Submitted",
+      correct,
+      total,
+      pct,
+      nextStep: exam.currentStep ?? null,
+      finalLevel: exam.finalLevel ?? null,
+    })
   } catch (err) {
     next(err)
   }
