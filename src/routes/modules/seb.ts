@@ -4,8 +4,6 @@ import crypto from "crypto"
 
 const router = Router()
 
-// Simple validation endpoint for SEB headers/signature.
-// In production, validate the SEB config key and browser exam keys according to SEB docs.
 router.post("/validate", (req, res) => {
   const schema = z.object({
     clientToken: z.string().optional(),
@@ -17,7 +15,7 @@ router.post("/validate", (req, res) => {
   res.json({ ok })
 })
 
-// Example endpoint to generate a simple SEB config payload (to be converted/signature-added with SEB Config Tool)
+
 router.get("/config", (_req, res) => {
   const payload = {
     examUrl: `${process.env.CLIENT_ORIGIN}/exam`,
@@ -25,7 +23,6 @@ router.get("/config", (_req, res) => {
     allowClipboard: false,
     allowNewWindow: false,
     allowWLAN: false,
-    // ... more SEB options here
   }
   res.json(payload)
 })

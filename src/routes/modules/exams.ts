@@ -217,7 +217,7 @@ router.post("/submit", requireAuth, async (req, res, next) => {
 
     await exam.save()
 
-    // Auto-generate certificate on completion and email it
+    // auto-generate certificate on completion and email 
     const latestAttempt = await Attempt.findOne({ examId: exam._id }).sort({ submittedAt: -1 })
     if (exam.status === "completed" && exam.finalLevel && latestAttempt?._id) {
       const existing = await Certificate.findOne({ userId: new Types.ObjectId(userId), attemptId: latestAttempt._id })
@@ -231,7 +231,7 @@ router.post("/submit", requireAuth, async (req, res, next) => {
       }
       try {
         const user = await User.findById(userId).select("name email")
-        // Create PDF buffer
+        // create pdf bufer
         const buffer = await new Promise<Buffer>((resolve) => {
           const doc = new PDFDocument({ size: "A4", margin: 50 })
           const chunks: Uint8Array[] = []
@@ -254,7 +254,7 @@ router.post("/submit", requireAuth, async (req, res, next) => {
           [{ filename: `certificate-${cert?._id}.pdf`, content: buffer }],
         )
       } catch {
-        // email failure should not block response
+       
       }
     }
 

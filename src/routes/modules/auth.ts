@@ -127,7 +127,7 @@ router.post("/forgot-password", async (req, res, next) => {
     if (!user) return res.json({ message: "If exists, email sent" })
     const token = crypto.randomBytes(32).toString("hex")
     const resetLink = `${process.env.CLIENT_ORIGIN}/auth/reset-password?token=${token}`
-    // Store hashed token in user temp (for demo reuse refreshTokenHash field not to add extra schema)
+    // store hashed token in user temp
     user.refreshTokenHash = hashToken(token)
     await user.save()
     await sendMail(email, "Password reset", `<p>Reset your password: <a href="${resetLink}">${resetLink}</a></p>`)

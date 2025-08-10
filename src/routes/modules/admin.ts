@@ -25,7 +25,7 @@ router.get("/users", requireAuth, requireRole(["admin"]), async (req, res, next)
   }
 })
 
-// Rich analytics for admin dashboard
+//  analytics for admin dashboard
 router.get("/stats", requireAuth, requireRole(["admin"]), async (_req, res, next) => {
   try {
     const [usersByRole, examsByStatus, certificatesByLevel, avgScoreByStep, dailyRegistrations, competencyAccuracy] =
@@ -33,7 +33,7 @@ router.get("/stats", requireAuth, requireRole(["admin"]), async (_req, res, next
         User.aggregate([{ $group: { _id: "$role", count: { $sum: 1 } } }]),
         Exam.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
         Certificate.aggregate([{ $group: { _id: "$level", count: { $sum: 1 } } }]),
-        // Average score per step from Attempts
+        // Average score per step from Atempts
         // Since total may vary, use avg(score/total)
         // Fallback protect against divide-by-zero using $cond
         Answer.db
@@ -106,7 +106,7 @@ router.get("/stats", requireAuth, requireRole(["admin"]), async (_req, res, next
   }
 })
 
-// New: admin certificates list with pagination and user info
+//  admin certifiates list with pagination and user info
 router.get("/certificates", requireAuth, requireRole(["admin"]), async (req, res, next) => {
   try {
     const page = Math.max(1, Number((req.query.page as string) || 1))

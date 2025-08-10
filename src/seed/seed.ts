@@ -21,7 +21,7 @@ async function main() {
     })
   }
 
-  // Seed sample questions (22 competencies x 6 levels = 132). We'll generate placeholders.
+  // seed sample questions (22 competencies x 6 levels = 132)
   const competencies = [
     "Information Literacy","Communication","Content Creation","Safety","Problem Solving",
     "Data Handling","Networking","Cybersecurity","AI Literacy","Cloud Basics","OS Usage",
@@ -36,17 +36,17 @@ async function main() {
     for (const level of levels) {
       for (const comp of competencies) {
         const choices = Array.from({ length: 4 }).map((_, i) => ({ id: nanoid(8), text: `Choice ${i + 1}` }))
-        const correctChoiceId = choices[0].id
+        const correctChoiceId = choices[0]!.id
         toInsert.push({ level, competency: comp, text: `[${level}] ${comp} sample question?`, choices, correctChoiceId })
       }
     }
     await Question.insertMany(toInsert)
   }
 
-  console.log("Seed complete.")
-  console.log("Admin Credentials:")
-  console.log(`Email: ${adminEmail}`)
-  console.log(`Password: ${adminPass}`)
+  // console.log("Seed complete.")
+  // console.log("Admin Credentials:")
+  // console.log(`Email: ${adminEmail}`)
+  // console.log(`Password: ${adminPass}`)
   await mongoose.disconnect()
 }
 

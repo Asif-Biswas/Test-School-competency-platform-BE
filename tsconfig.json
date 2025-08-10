@@ -16,6 +16,7 @@
     "declaration": true,
     "declarationMap": true,
     "strict": true,
+    "noImplicitAny": false, 
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "types": ["node"]

@@ -33,7 +33,7 @@ router.post("/", requireAuth, requireRole(["admin"]), async (req, res, next) => 
     const { level, competency, text, choices, correctIndex } = createSchema.parse(req.body)
     if (correctIndex >= choices.length) throw createError(400, "Invalid correctIndex")
     const choiceObjs = choices.map((t) => ({ id: nanoid(8), text: t }))
-    const correctChoiceId = choiceObjs[correctIndex].id
+  const correctChoiceId = choiceObjs[correctIndex]!.id;
     const q = await Question.create({ level, competency, text, choices: choiceObjs, correctChoiceId })
     res.status(201).json(q)
   } catch (err) {
